@@ -1,62 +1,58 @@
 import os
-import logging
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 import yt_dlp
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
-# Logging
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
-)
+# Ruta al archivo cookies.txt en la raíz
+COOKIE_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "cookies.txt")
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-YT_COOKIES = os.environ.get("YT_COOKIES")  # Ruta al archivo cookies.txt
-
-ydl_opts = {
-    "format": "bestaudio/best",
-    "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3"}],
-}
-
-if YT_COOKIES:
-    ydl_opts["cookiefile"] = YT_COOKIES
-
+# Función de inicio / bienvenida
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "¡Hola! Envía el nombre de la canción y te la entregaré en mp3.\nBOT HECHO POR LUIS 🤯"
+        "¡Hola! Envía el nombre de una canción y te la enviaré en MP3.\nBOT HECHO POR LUIS 🤯"
     )
 
-async def download_song(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# Función que maneja los mensajes de texto (nombres de canciones)
+async def descargar_musica(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.message.text
-    await update.message.reply_text(f"Buscando y descargando: {query}\nBOT HECHO POR LUIS 🤯")
-    
-    # yt-dlp usa búsqueda de YouTube si le pasas "ytsearch1:query"
+    chat_id = update.message.chat_id
+
+    # Mensaje de recepción
+    await update.message.reply_text(f"Recibido: {query}\nBuscando la canción... BOT HECHO POR LUIS 🤯")
+
+    # Configuración de yt-dlp
+    ydl_opts = {
+        "format": "bestaudio/best",
+        "noplaylist": True,
+        "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3"}],
+        "outtmpl": f"{query}.%(ext)s",
+        "cookiefile": COOKIE_PATH
+    }
+
     try:
+        # Buscar y descargar usando ytsearch
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(f"ytsearch1:{query}", download=True)
-            file_path = ydl.prepare_filename(info['entries'][0])
-            mp3_path = file_path.rsplit(".", 1)[0] + ".mp3"
-        
-        with open(mp3_path, "rb") as f:
-            await update.message.reply_audio(f, filename=mp3_path.split("/")[-1])
-        
-        await update.message.reply_text(f"¡Listo! 🎵\nBOT HECHO POR LUIS 🤯")
-    except Exception as e:
-        await update.message.reply_text(f"Error al descargar: {e}\nBOT HECHO POR LUIS 🤯")
+            filename = ydl.prepare_filename(info)
+            mp3_file = os.path.splitext(filename)[0] + ".mp3"
 
-# Construir aplicación
+        # Enviar el archivo MP3 al usuario
+        await context.bot.send_audio(chat_id=chat_id, audio=open(mp3_file, "rb"))
+        await update.message.reply_text("Canción entregada con éxito! BOT HECHO POR LUIS 🤯")
+
+        # Eliminar el archivo descargado para no acumular
+        os.remove(mp3_file)
+
+    except Exception as e:
+        await update.message.reply_text(f"Error al descargar: {e} BOT HECHO POR LUIS 🤯")
+
+# Crear la aplicación
+BOT_TOKEN = os.environ.get("BOT_TOKEN")  # Asegúrate de tener BOT_TOKEN en variables de entorno
 app = ApplicationBuilder().token(BOT_TOKEN).build()
 
+# Registrar handlers
 app.add_handler(CommandHandler("start", start))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_song))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, descargar_musica))
 
-# Webhook (Render env)
-PORT = int(os.environ.get("PORT", "8443"))
-URL = os.environ.get("APP_URL")  # p.ej: https://music-bot-xs5m.onrender.com
-
-if __name__ == "__main__":
-    app.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        url_path=BOT_TOKEN,
-        webhook_url=f"{URL}/{BOT_TOKEN}"
-    )
+# Iniciar bot
+app.run_polling()
