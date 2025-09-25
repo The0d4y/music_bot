@@ -1,69 +1,65 @@
 import os
-import yt_dlp
-from fastapi import FastAPI, Request
+from flask import Flask, request
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram.ext import Application, CommandHandler, MessageHandler, filters
+import yt_dlp
+import asyncio
 
-# Leer token desde variables de entorno
 TOKEN = os.getenv("BOT_TOKEN")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # tu dominio de Render
 
-# FastAPI app
-app = FastAPI()
+# Creamos la aplicación de Telegram
+application = Application.builder().token(TOKEN).build()
 
-# Descargar música con yt-dlp
-def download_music(url: str, filename: str):
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'outtmpl': filename,
-        'postprocessors': [
-            {
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }
-        ],
-        'quiet': True
-    }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        ydl.download([url])
+# ------------------- Handlers -------------------
+async def start(update: Update, context):
+    await update.message.reply_text("🎵 Hola! Mándame el nombre o una parte de una canción y te la descargo.\nBOT HECHO POR LUIS 🤯")
 
-# Handlers
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🎶 Envíame un link de YouTube y te lo descargo en MP3.\nBOT HECHO POR LUIS 🤯")
-
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    url = update.message.text
-    await update.message.reply_text("⏳ Descargando música, espera un momento...\nBOT HECHO POR LUIS")
-
-    filename = "song.mp3"
+async def descargar_musica(update: Update, context):
+    query = update.message.text
+    await update.message.reply_text(f"⏳ Buscando\n espere un momento por favor..\nBOT HECHO POR LUIS🤯: {query}")
     try:
-        download_music(url, filename)
-        await update.message.reply_audio(audio=open(filename, "rb"), title="Tu canción 🎵")
+        ydl_opts = {
+            "format": "bestaudio/best",
+            "outtmpl": "song.%(ext)s",
+            "postprocessors": [{
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "mp3",
+                "preferredquality": "192",
+            }],
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(f"ytsearch1:{query}", download=True)
+            filename = ydl.prepare_filename(info["entries"][0]).replace(".webm", ".mp3").replace(".m4a", ".mp3")
+
+        with open(filename, "rb") as song:
+            await update.message.reply_audio(song)
+
         os.remove(filename)
     except Exception as e:
-        await update.message.reply_text(f"❌ Error al descargar: {e}")
+        await update.message.reply_text(f"⚠️ Error: {e}")
 
-# Inicializar aplicación de Telegram
-application = Application.builder().token(TOKEN).build()
+# Registrar handlers
 application.add_handler(CommandHandler("start", start))
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, descargar_musica))
 
-# Endpoint raíz
-@app.get("/")
-async def root():
-    return {"status": "Bot de Luis funcionando en Render 🤯"}
+# ------------------- Flask -------------------
+app = Flask(__name__)
 
-# Endpoint webhook
-@app.post("/webhook")
-async def webhook(request: Request):
-    data = await request.json()
+@app.before_first_request
+def init_bot():
+    """Inicializar y arrancar el bot cuando Flask arranca"""
+    loop = asyncio.get_event_loop()
+    loop.create_task(application.initialize())
+    loop.create_task(application.start())
+
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    data = request.get_json(force=True)
     update = Update.de_json(data, application.bot)
-    await application.process_update(update)
-    return {"ok": True}
+    asyncio.get_event_loop().create_task(application.process_update(update))
+    return "OK", 200
 
-# Configuración de webhook al arrancar
-@app.on_event("startup")
-async def set_webhook():
-    if WEBHOOK_URL:
-        await application.bot.set_webhook(f"{WEBHOOK_URL}/webhook")
+# ------------------- Main -------------------
+if __name__ == "__main__":
+    PORT = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=PORT)
