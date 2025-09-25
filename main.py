@@ -1,22 +1,22 @@
 import os
+import asyncio
+import threading
 from flask import Flask, request
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 import yt_dlp
-import asyncio
 
 TOKEN = os.getenv("BOT_TOKEN")
 
-# Creamos la aplicación de Telegram
+# ------------------- Telegram Bot -------------------
 application = Application.builder().token(TOKEN).build()
 
-# ------------------- Handlers -------------------
 async def start(update: Update, context):
-    await update.message.reply_text("🎵 Hola! Mándame el nombre o una parte de una canción y te la descargo.\nBOT HECHO POR LUIS 🤯")
+    await update.message.reply_text("🎵 Hola! Mándame el nombre de una canción y te la descargo.\nBOT HECHO POR LUIS 🤯")
 
 async def descargar_musica(update: Update, context):
     query = update.message.text
-    await update.message.reply_text(f"⏳ Buscando\n espere un momento por favor..\nBOT HECHO POR LUIS🤯: {query}")
+    await update.message.reply_text(f"⏳ Buscando: {query}")
     try:
         ydl_opts = {
             "format": "bestaudio/best",
@@ -45,19 +45,23 @@ application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, descarga
 # ------------------- Flask -------------------
 app = Flask(__name__)
 
-@app.before_first_request
-def init_bot():
-    """Inicializar y arrancar el bot cuando Flask arranca"""
-    loop = asyncio.get_event_loop()
-    loop.create_task(application.initialize())
-    loop.create_task(application.start())
-
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.get_json(force=True)
     update = Update.de_json(data, application.bot)
     asyncio.get_event_loop().create_task(application.process_update(update))
     return "OK", 200
+
+# ------------------- Inicializar Bot -------------------
+def run_bot():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(application.initialize())
+    loop.run_until_complete(application.start())
+    loop.run_forever()
+
+# Lanzar el bot en un thread
+threading.Thread(target=run_bot, daemon=True).start()
 
 # ------------------- Main -------------------
 if __name__ == "__main__":
