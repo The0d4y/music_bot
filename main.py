@@ -1,62 +1,59 @@
-from telegram import Update
-from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
-import yt_dlp
 import os
+import asyncio
+from telegram import Update
+from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
+import yt_dlp
 
-BOT_TOKEN = "TU_BOT_TOKEN_AQUI"
+# Obtener token desde variable de entorno
+TOKEN = os.environ.get("BOT_TOKEN")
+if not TOKEN:
+    raise ValueError("No se encontró la variable de entorno BOT_TOKEN")
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Hola! Envía el nombre de la canción o enlace de YouTube y te la devolveré en MP3.\nBOT HECHO POR LUIS 🤯"
-    )
+# Carpeta temporal para descargas
+DOWNLOAD_DIR = "./downloads"
+os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-async def download_song(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
+# Configuración de yt-dlp para mp3
+YDL_OPTS = {
+    'format': 'bestaudio/best',
+    'outtmpl': f'{DOWNLOAD_DIR}/%(title)s.%(ext)s',
+    'postprocessors': [{
+        'key': 'FFmpegExtractAudio',
+        'preferredcodec': 'mp3',
+        'preferredquality': '192',
+    }],
+    'quiet': True,
+    'noplaylist': True,
+}
+
+# Función principal para manejar mensajes de texto
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_text = update.message.text
     chat_id = update.message.chat_id
 
-    # Mensaje de recibido
-    await update.message.reply_text(f"Recibido: {text}\nComenzando descarga... BOT HECHO POR LUIS 🤯")
+    # Mensaje de recepción
+    await context.bot.send_message(chat_id=chat_id, text=f"Recibido: {user_text}\nBOT HECHO POR LUIS 🤯")
 
-    # Configuración de yt-dlp para MP3
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'noplaylist': True,
-        'outtmpl': '%(title)s.%(ext)s',
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '192',
-        }],
-    }
-
+    # Descargar canción
     try:
-        # Si es un enlace, úsalo directamente; si no, búsqueda en YouTube
-        query = text if text.startswith("http") else f"ytsearch1:{text}"
+        with yt_dlp.YoutubeDL(YDL_OPTS) as ydl:
+            info = ydl.extract_info(f"ytsearch1:{user_text}", download=True)
+            filename = ydl.prepare_filename(info['entries'][0])
+            mp3_file = os.path.splitext(filename)[0] + ".mp3"
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info_dict = ydl.extract_info(query, download=True)
-            filename = ydl.prepare_filename(info_dict)
-            # Cambia extensión a .mp3
-            filename = os.path.splitext(filename)[0] + ".mp3"
-
-        # Enviar archivo MP3
-        with open(filename, 'rb') as f:
-            await context.bot.send_document(chat_id, document=f, filename=os.path.basename(filename))
-
-        # Mensaje de entrega
-        await update.message.reply_text(f"¡Descarga completada! BOT HECHO POR LUIS 🤯")
-
-        # Borrar archivo
-        os.remove(filename)
-
+        # Enviar mp3
+        await context.bot.send_audio(chat_id=chat_id, audio=open(mp3_file, 'rb'),
+                                     caption=f"Tu canción: {info['entries'][0]['title']}\nBOT HECHO POR LUIS 🤯")
     except Exception as e:
-        await update.message.reply_text(f"Error al descargar: {str(e)} BOT HECHO POR LUIS 🤯")
+        await context.bot.send_message(chat_id=chat_id, text=f"Error al descargar: {e}\nBOT HECHO POR LUIS 🤯")
 
-if __name__ == "__main__":
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
+# Crear la aplicación
+app = ApplicationBuilder().token(TOKEN).build()
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_song))
+# Agregar handler de mensajes de texto
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
+# Ejecutar bot
+if __name__ == '__main__':
     print("Bot corriendo...")
     app.run_polling()
