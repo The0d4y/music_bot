@@ -2,6 +2,9 @@ import os
 import yt_dlp
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+import socket, threading
+
+threading.Thread(target=lambda: [socket.socket().bind(("0.0.0.0", int(os.environ.get("PORT", 5000)))) or s.listen(1) or [s.accept()[0].close() for _ in iter(int, 1)]], daemon=True).start()
 
 # Ruta al archivo cookies.txt en la raíz
 COOKIE_PATH = "cookies.txt"
