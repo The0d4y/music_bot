@@ -1,10 +1,26 @@
 import os
 import yt_dlp
+import socket
+import threading
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
-import socket, threading
 
-threading.Thread(target=lambda: [socket.socket().bind(("0.0.0.0", int(os.environ.get("PORT", 5000)))) or s.listen(1) or [s.accept()[0].close() for _ in iter(int, 1)]], daemon=True).start()
+# ----- Dummy port para Render -----
+def open_dummy_port():
+    try:
+        port = int(os.environ.get("PORT", 5000))
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.bind(("0.0.0.0", port))
+        sock.listen(1)
+        print(f"Dummy port abierto en {port} para Render")
+        while True:
+            conn, _ = sock.accept()
+            conn.close()
+    except Exception:
+        pass  # cualquier error lo ignoramos, no rompe el bot
+
+# Ejecutar en un hilo separado, sin bloquear el bot
+threading.Thread(target=open_dummy_port, daemon=True).start()
 
 # Ruta al archivo cookies.txt en la raíz
 COOKIE_PATH = "cookies.txt"
