@@ -4,7 +4,7 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
 # Ruta al archivo cookies.txt en la raíz
-COOKIE_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "cookies.txt")
+COOKIE_PATH = "cookies.txt"
 
 # Función de inicio / bienvenida
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
